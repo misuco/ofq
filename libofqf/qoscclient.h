@@ -19,22 +19,19 @@
 #ifndef QOSCCLIENT_H
 #define QOSCCLIENT_H
 
-#include <qosctypes.h>
+#include "qosctypes.h"
+#include "qoscclientinterface.h"
 
 /**
  * will contain the definitions/classes of osc clients
  */
-
-#include <QtNetwork/QHostAddress>
-
-class QOscServer;
 
 /**
  * @brief Client-object for outgoing OSC-Datagrams
  *
  * This class allows to send OSC-messages to a specified host/port.
  */
-class QOscClient : public QOscBase
+class QOscClient : public QOscBase, public QOscClientInterface
 {
 	Q_OBJECT
 	public:
@@ -44,26 +41,21 @@ class QOscClient : public QOscBase
 		 * This creates a new OSC-connection to the specified host/port. Later
 		 * the servers host/port can be changed via setAddress();
 		 */
-		QOscClient( const QHostAddress&, quint16 port, QObject* );
-		/// destructor
-		~QOscClient();
+        QOscClient(QObject* = nullptr );
+        QOscClient(const QHostAddress&, quint16 port, QObject* = nullptr);
+        QOscClient(const QHostAddress&, quint16 source_port, quint16 dst_port, QObject* = nullptr);
+        ~QOscClient();
 
 		/**
 		 * @brief ( Re- )Set the host/port to send messages to
 		 */
-		void setAddress( const QHostAddress&, quint16 port );
+        void setAddress( char *, quint16 port );
 
-		/**
-		 * @brief Set a hostaddress for feedback/answers
-		 *
-		 * If you want answers for your messages you can indicate this by
-		 * setting the OSC-Server that is to get these answers.
-		 */
-		void setAnswerAddress( QOscServer* );
+        QHostAddress getIP();
+
 
 	public slots:
-		void sendData( QString, QVariant =QVariant::Invalid );
-		void sendData( QString, QList<QVariant> );
+        void sendData( QString, QVariant );
 	
 	private:
 		QHostAddress _address;

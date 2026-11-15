@@ -19,7 +19,8 @@
 #ifndef QOSCSERVER_H
 #define QOSCSERVER_H
 
-#include <qosctypes.h>
+#include "qosctypes.h"
+#include "qoscserverinterface.h"
 
 /*
  * will contain the definitions/classes of osc servers
@@ -34,39 +35,42 @@
  * packages, you might want to take a look at the PathObject to get the
  * OSC-messages translated into Qt signals.
  */
-class QOscServer : public QOscBase
+class QOscServer :  public QOscBase, public QOscServerInterface
 {
-	Q_OBJECT
-	friend class PathObject;
-	public:
-		/**
-		 * Creates an OSC-server that listens on all interfaces on the specified
-		 * port for incoming datagrams.
-		 */
-		QOscServer( quint16 port, QObject* p );
-		/**
-		 * Creates an OSC-server that listens on the specified address and port
-		 * for incoming datagrams.
-		 */
-		QOscServer( QHostAddress address, quint16 port, QObject* p );
-		/// destructor
-		~QOscServer();
+    Q_OBJECT
+    friend class PathObject;
 
-		/**
-		 * @brief Don't allow changing the socket.
-		 */
-		void setSocket( QUdpSocket* ) {}
+public:
 
-	signals:
-		void data( QString path, QVariant data );
+    /**
+     * Creates an OSC-server that listens on all interfaces on the specified
+     * port for incoming datagrams.
+     */
+    QOscServer( quint16 port, QObject* p );
 
-	private slots:
-		void readyRead();
-	private:
+    /**
+     * Creates an OSC-server that listens on the specified address and port
+     * for incoming datagrams.
+     */
+    QOscServer( QHostAddress address, quint16 port, QObject* p );
 
-		void registerPathObject( PathObject* );
-		void unregisterPathObject( PathObject* );
-		QList<PathObject*> paths;
+    ~QOscServer();
+
+signals:
+    void oscData( QString path, QList<QVariant> data, QHostAddress src_adr, quint16 src_port);
+
+private slots:
+    void readyRead();
+
+private:
+    const int BUFFERSIZE=4096;
+    int decodeState;
+    bool inBundle;
+    QString path;       // osc-path
+    QString args;       // argument string
+    int nargs;          // number of arguments
+    int carg;           // currently parsed argument
+    QVariant arguments; // the parsed arguments
 };
 
 #endif // QOSCSERVER_H

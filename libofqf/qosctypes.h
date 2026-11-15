@@ -23,6 +23,7 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
 #include <QtCore/QVariant>
+#include <QtNetwork/QHostAddress>
 
 /*
  * Will contain the conversions from Qt-types to OSC-types
@@ -35,78 +36,48 @@ class QUdpSocket;
  */
 class QOscBase : public QObject
 {
-	Q_OBJECT
-	protected:
-		QOscBase( QObject* );
+    Q_OBJECT
+protected:
+    QOscBase( QObject* );
+    QOscBase();
 
-		static void fillQByteArrayUp( QByteArray& in );
-		static QByteArray reverseQByteArray( QByteArray in );
+    static void fillQByteArrayUp( QByteArray& in );
+    static QByteArray reverseQByteArray( QByteArray in );
 
-		static QByteArray fromString( QString );
-		static QByteArray fromInt32( qint32 );
-		static QByteArray fromFloat( float );
+    static QByteArray fromString( QString );
+    static QByteArray fromInt32( qint32 );
+    static QByteArray fromInt64( quint64 );
+    static QByteArray fromFloat( float );
 
-		static QString toString( const QByteArray& );
-		static qint32 toInt32( const QByteArray& );
-		static float toFloat( const QByteArray& );
+    static QString toString( const QByteArray& );
+    static qint32 toInt32( const QByteArray& );
+    static float toFloat( const QByteArray& );
 
-		static void oscMessageParseArgs( const QVariant&, QString&, QByteArray& );
-		static QByteArray oscMessage( QString path, QVariant );
+    static void oscMessageParseArgs( const QVariant&, QString&, QByteArray& );
+    static QByteArray oscMessage( QString path, QVariant );
 
-		virtual void setSocket( QUdpSocket* );
-		QUdpSocket* socket() const;
+    virtual void setSocket( QUdpSocket* );
+    QUdpSocket* socket() const;
 
-	private:
-		QUdpSocket* _socket;
+    unsigned long long getTimeTag();
+
+private:
+    QUdpSocket* _socket;
 };
 
 class QOscClient;
 class QOscServer;
+class QOscServerInterface;
 
 /**
  * @brief Connect osc-messages with QObjects
- */
-class PathObject : public QObject
+ *
+class PathObject // : public QObject
 {
-	Q_OBJECT
-	friend class QOscServer;
-	public:
-		PathObject( QString path, QVariant::Type type, QOscClient* parent );
-		PathObject( QString path, QVariant::Type type, QOscServer* parent );
-		~PathObject();
-
-	public slots:
-		/**
-		 * @brief send outgoing data
-		 */
-		//@{
-		void send( QVariant );
-		void send( int );
-		void send( QString );
-		void send( double );
-		void send();
-		//@}
-
-	signals:
-		// @{
-		/**
-		 * @brief signal incoming data
-		 */
-		void data( QVariant );
-		void data( int );
-		void data( double );
-		void data( QString );
-		void data();
-		// @}
-	private:
-		// called by QOscServer:
-		void signalData( QVariant );
-
-		QString _path;
-		QVariant::Type _type;
-		QOscClient* _client;
-		QOscServer* _server;
+public:
+    virtual ~PathObject() {}
+    virtual void signalData( QString, QVariant, QHostAddress *, quint16 )=0;
 };
-
+*/
 #endif // QOSCTYPES_H
 

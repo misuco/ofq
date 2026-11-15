@@ -16,20 +16,24 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
 
-#include "qosctypes.h"
-#include "qoscserver.h"
-#include "qoscclient.h"
+#include <sys/time.h>
 
 #include <QtCore/QByteArray>
 #include <QtCore/QString>
-#include <QtCore/QDebug>
 #include <QtNetwork/QUdpSocket>
 
+#include "qosctypes.h"
+
 QOscBase::QOscBase( QObject* p )
-	: QObject( p )
-	, _socket( 0 )
+        : QObject( p )
+        , _socket( new QUdpSocket( this ) )
 {
-	setSocket( 0 );
+}
+
+QOscBase::QOscBase()
+    : QObject( nullptr )
+    , _socket( new QUdpSocket( this ) )
+{
 }
 
 void QOscBase::setSocket( QUdpSocket* s ) {
@@ -51,14 +55,12 @@ void QOscBase::fillQByteArrayUp( QByteArray& in ) {
 	while ( in.length() % 4 != 0 )
 		in.append( char( 0 ) );
 }
-
 QByteArray QOscBase::reverseQByteArray( QByteArray in ) {
 	QByteArray out;
 	for ( int i=0; i<in.size(); ++i )
 		out.prepend( in[ i ] );
 	return out;
 }
-
 QByteArray QOscBase::fromString( QString str ) {
 	QByteArray out = str.toUtf8();
 	out.append( char( 0 ) );
@@ -67,49 +69,51 @@ QByteArray QOscBase::fromString( QString str ) {
 	return out;
 }
 QByteArray QOscBase::fromInt32( qint32 i ) {
-	QByteArray tmp( ( char* )static_cast<void*>( &i ), 4 );
-	return reverseQByteArray( tmp );
+        QByteArray tmp( ( char* )static_cast<void*>( &i ), 4 );
+        return reverseQByteArray( tmp );
+}
+QByteArray QOscBase::fromInt64( quint64 i ) {
+        QByteArray tmp( ( char* )static_cast<void*>( &i ), 8 );
+        return reverseQByteArray( tmp );
 }
 QByteArray QOscBase::fromFloat( float f ) {
 	QByteArray tmp( ( char* )static_cast<void*>( &f ), 4 );
 	return reverseQByteArray( tmp );
 }
 QString QOscBase::toString( const QByteArray& b ) {
-	//QByteArray tmp = b.left( b.indexOf( char( 0 ) ) );
-	//return QString( tmp );
 	return QString( b.data() );
 }
 qint32 QOscBase::toInt32( const QByteArray& b ) {
 	QByteArray tmp = b.left( 4 );
-	tmp = reverseQByteArray( tmp );
+        tmp = reverseQByteArray( tmp );
 	qint32* ret = ( qint32* )static_cast<void*>( tmp.data() );
 	return *ret;
 }
 float QOscBase::toFloat( const QByteArray& b ) {
 	QByteArray tmp = b.left( 4 );
-	tmp = reverseQByteArray( tmp );
+        tmp = reverseQByteArray( tmp );
 	float* ret = ( float* )static_cast<void*>( tmp.data() );
 	return *ret;
 }
 
 void QOscBase::oscMessageParseArgs( const QVariant& data, QString& argtypes, QByteArray& arguments ) {
-	if ( data.type() == QVariant::Int ) {
+    if ( data.typeId() == QMetaType::Int ) {
 		argtypes += "i";
 		arguments = arguments + fromInt32( data.toInt() );
-	}
-	if ( data.type() == QVariant::Double ) {
-		argtypes += "f";
-		arguments += fromFloat( data.toDouble() );
-	}
-	if ( data.type() == QVariant::String ) {
+    } else if ( data.typeId() == QMetaType::Double ) {
+        argtypes += "f";
+        arguments += fromFloat( data.toFloat() );
+    } else if ( data.typeId() == QMetaType::QString ) {
 		argtypes += "s";
 		arguments += fromString( data.toString() );
-	}
-	if ( data.type() == QVariant::List ) {
+    } else if ( data.typeId() == QMetaType::QVariantList ) {
 		QList<QVariant> list = data.toList();
 		foreach( QVariant v, list )
 			oscMessageParseArgs( v, argtypes, arguments );
-	}
+    } else {
+        argtypes += "f";
+        arguments += fromFloat( data.toFloat() );
+    }
 }
 
 QByteArray QOscBase::oscMessage( QString path, QVariant arg ) {
@@ -124,50 +128,20 @@ QByteArray QOscBase::oscMessage( QString path, QVariant arg ) {
 	return out;
 }
 
-
-PathObject::PathObject( QString path, QVariant::Type type, QOscClient* parent )
-	: QObject( parent )
-	, _path( path )
-	, _type( type )
-	, _client( parent )
-	, _server( 0 )
+unsigned long long QOscBase::getTimeTag()
 {
-}
-PathObject::PathObject( QString path, QVariant::Type type, QOscServer* parent )
-	: QObject( parent )
-	, _path( path )
-	, _type( type )
-	, _client( 0 )
-	, _server( parent )
-{
-	_server->registerPathObject( this );
-}
-PathObject::~PathObject() {
-	if ( _server )
-		_server->unregisterPathObject( this );
-}
+    const unsigned long long EPOCH = 2208988800ULL;
+    const unsigned long long NTP_SCALE_FRAC = 4294967295ULL;
+    timeval tim;
 
-void PathObject::send( QVariant v ) {
-	if ( v.type() == _type && _client )
-		_client->sendData( _path, v );
-}
-void PathObject::send( int i ) { send( QVariant( i ) ); }
-void PathObject::send( QString s ) { send( QVariant( s ) ); }
-void PathObject::send( double d ) { send( QVariant( d ) ); }
-void PathObject::send() { send( QVariant() ); }
+    gettimeofday(&tim, NULL);
 
-void PathObject::signalData( QVariant v ) {
-	qDebug() << "PathObject::signalData(" << v << ")";
-	if ( v.type() == _type ) {
-		if ( _type == QVariant::Invalid )
-			emit data();
-		if ( _type == QVariant::Int )
-			emit data( v.toInt() );
-		if ( _type == QVariant::Double )
-			emit data( v.toDouble() );
-		if ( _type == QVariant::String )
-			emit data( v.toString() );
-		emit data( v );
-	}
+    unsigned long long tv_ntp, tv_usecs;
+
+    tv_ntp = tim.tv_sec + EPOCH;
+    tv_usecs = (NTP_SCALE_FRAC * tim.tv_usec) / 1000000UL;
+
+    return (tv_ntp << 32) | tv_usecs;
+
 }
 

@@ -17,52 +17,56 @@
  */
 
 #include "qoscclient.h"
-//#include "qoscclient.moc"
 
-#include <QtCore/QDebug>
 #include <QtCore/QByteArray>
 #include <QtNetwork/QUdpSocket>
 
-#include <lo/lo.h>
+QOscClient::QOscClient( QObject * p)
+: QOscBase(p) {}
 
 QOscClient::QOscClient( const QHostAddress& address, quint16 port, QObject* p )
-	: QOscBase( p )
-	, _address( address )
-	, _port( port )
+        : QOscBase( p )
+        , _address( address )
+        , _port( port )
 {
-	qDebug() << "QOscClient::QOscClient(" << address << "," << port << "," << p << ")";
+        //qDebug() << "QOscClient::QOscClient(" << address << "," << port << "," << p << ")";
 }
+
+QOscClient::QOscClient( const QHostAddress& address, quint16 source_port, quint16 dst_port, QObject* p )
+        : QOscBase( p )
+        , _address( address )
+        , _port( dst_port )
+{
+        socket()->bind( source_port, QUdpSocket::ShareAddress );
+}
+
 
 QOscClient::~QOscClient() {
-	qDebug() << "QOscClient::~QOscClient()";
+    //qDebug() << "QOscClient::~QOscClient()";
 }
 
-void QOscClient::setAddress( const QHostAddress& address, quint16 port ) {
-	_address = address;
-	_port = port;
+QHostAddress QOscClient::getIP()
+{
+    qDebug() << "QOscClient getIP " << socket()->localAddress();
+    qDebug() << "QOscClient localPort " << socket()->localPort();
+    return socket()->localAddress();
+}
+
+void QOscClient::setAddress( char * adr, quint16 port ) {
+    _address = QHostAddress(adr);
+    _port = port;
 }
 
 void QOscClient::sendData( QString path, QVariant data ) {
-	//qDebug() << "QOscClient::sendData(" << path << "," << data << ")";
-	/*lo_message msg = lo_message_new();
-	if ( data.type() == QVariant::Int )
-		lo_message_add_int32( msg, data.toInt() );
-	if ( data.type() == QVariant::Double )
-		lo_message_add_float( msg, data.toDouble() );
-	if ( data.type() == QVariant::String )
-		lo_message_add_string( msg, data.toString().toStdString().c_str() );
-	size_t charsize=0;
-	void* chars = lo_message_serialise( msg, path.toStdString().c_str(), 0, &charsize );*/
-	//qDebug() << " osc-message at" << chars << " length is" << charsize;
-	QByteArray out = oscMessage( path, data );
-	//qDebug() << " own message has size" << out.size();
-	//for ( int i=0; i<qMax( int( charsize ), out.size() ); ++i )
-	//	qDebug() << "  byte" << i << "\t" << static_cast<quint8*>( chars )[ i ] /*<< "\"" << static_cast<char*>( chars )[ i ] << "\""*/ << "\t :" << quint8( out[ i ] ) << "\t\"" << out[ i ] << "\"";
-	socket()->writeDatagram( out, _address, _port );
-}
-void QOscClient::sendData( QString path, QList<QVariant> data ) {
-	//qDebug() << "QOscClient::sendData(" << path << "," << data << ")";
-	QByteArray out = oscMessage( path, data );
-	socket()->writeDatagram( out, _address, _port );
-}
+        //qDebug() << "QOscClient::sendData(" << path << "," << data << ")";
 
+        quint64 timeTag=getTimeTag();
+        QByteArray msg = oscMessage( path, data );
+        qint32 len = msg.length();
+
+        QByteArray out(QOscBase::fromString("#bundle")+QOscBase::fromInt64(timeTag)+QOscBase::fromInt32(len)+msg);
+
+        socket()->writeDatagram( out, _address, _port );
+
+        //qDebug() << "to " << _address << " " << _port;
+}

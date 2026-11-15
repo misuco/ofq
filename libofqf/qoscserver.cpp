@@ -18,117 +18,111 @@
 
 #include "qoscserver.h"
 
-#include <QtCore/QDebug>
-#include <QtCore/QRegExp>
 #include <QtNetwork/QUdpSocket>
 
 QOscServer::QOscServer( quint16 port, QObject* p )
 	: QOscBase( p )
 {
-	qDebug() << "QOscServer::QOscServer(" << port << "," << p << ")";
-	qDebug() << " socket() gives" << socket();
-	socket()->bind( QHostAddress::Any, port );
-	connect( socket(), SIGNAL( readyRead() ), this, SLOT( readyRead() ) );
+        decodeState=0;
+        socket()->bind( QHostAddress::Any, port , QUdpSocket::ShareAddress);
+        connect( socket(), SIGNAL( readyRead() ), this, SLOT( readyRead() ) );
 }
 QOscServer::QOscServer( QHostAddress address, quint16 port, QObject* p )
 	: QOscBase( p )
 {
-	qDebug() << "QOscServer::QOscServer(" << address << "," << port << "," << p << ")";
-	socket()->bind( address, port );
+        decodeState=0;
+        socket()->bind( address, port, QUdpSocket::ShareAddress );
+        connect( socket(), SIGNAL( readyRead() ), this, SLOT( readyRead() ) );
 }
 
 QOscServer::~QOscServer() {
-	qDebug() << "QOscServer::~QOscServer()";
+        //qDebug() << "QOscServer::~QOscServer()";
 }
-
-void QOscServer::registerPathObject( PathObject* p ) {
-	paths.push_back( p );
-}
-void QOscServer::unregisterPathObject( PathObject* p ) {
-	paths.removeAll( p );
-}
-
-#define BUFFERSIZE 255
 
 void QOscServer::readyRead() {
-	qDebug() << "QOscServer::readyRead()";
-	while ( socket()->hasPendingDatagrams() ) {
-		QByteArray data( BUFFERSIZE, char( 0 ) );
-		//data.resize( BUFFERSIZE );
-		int size = socket()->readDatagram( data.data(), BUFFERSIZE );
-		qDebug() << " read" << size << "(" << data.size() << ") bytes:" << data;
+    QHostAddress src_adr;
+    quint16 src_port;
 
-		//for ( int i=0; i<size; ++i )
-		//	qDebug() << i << "\t" << static_cast<quint8*>( static_cast<void*>( data.data() ) )[ i ];
-		QString path;
-		QString args;
-		QVariant arguments;
+    while ( socket()->hasPendingDatagrams() ) {
+            QByteArray data( BUFFERSIZE, char( 0 ) );
+            int size = socket()->readDatagram( data.data(), BUFFERSIZE, &src_adr, &src_port );
+            //qDebug() << " read" << size << "(" << data.size() << ") bytes:" << data;
 
-		int i=0;
-		if ( data[ i ] == '/' ) {
+            int i=0;
+            decodeState=0;  // in case of UDP we expect one osc packet per call
+            QList<QVariant> list;
+            QString parseString;
+            while(i<size) {
+                if(decodeState==0 && data[i] == '#' && data[i+1] == 'b' && data[i+2] == 'u') {
+                    inBundle=true;
+                    i+=19;
+                    decodeState=1;  // looking for path begin
+                } else if(decodeState==0 || decodeState==1) {
+                    if(data[i] == '/' ) {
+                        path="/";
+                        decodeState=2;  // parsing path
+                    }
+                } else if(decodeState==2) {
+                    if(data[i]!=char(0)) {
+                        path += data[ i ];
+                    } else {
+                        decodeState=3;  // looking for osc type tag string begin
+                    }
+                } else if(decodeState==3) {
+                    if(data[i] == ',') {
+                        args="";
+                        nargs=0;
+                        carg=0;
+                        decodeState=4; // parsing osc type tag string
+                    }
+                } else if(decodeState==4) {
+                    if(data[i]!=char(0)) {
+                        args += data[ i ];
+                        nargs++;
+                    } else {
+                        decodeState=5;  // parsing args
+                        int align=(i+1)%4;
+                        if(align>0) {
+                            i+=4-align;     // make sure the 4 bit alignment fits
+                        }
+                    }
+                } else if(decodeState==5) {
+                    if(args.at(carg)=='i') {
+                        QByteArray tmp=data.mid(i,4);
+                        list.append(toInt32(tmp));
+                        i+=3;
+                        carg++;
+                    } else if(args.at(carg)=='f') {
+                        QByteArray tmp=data.mid(i,4);
+                        list.append(toFloat(tmp));
+                        i+=3;
+                        carg++;
+                    } else if(args.at(carg)=='s') {
+                        parseString=data[i];
+                        decodeState=6; // parsing string argument
+                    }
+                } else if(decodeState==6) {
+                    if(data[i]!=char(0)) {
+                        parseString+=data[i];
+                    } else {
+                        list.append(parseString);
+                        carg++;
+                        decodeState=5;
+                        int align=(i+1)%4;
+                        if(align>0) {
+                            i+=4-align;     // make sure the 4 bit alignment fits
+                        }
+                    }
+                }
+                if(decodeState>4 && carg==nargs) {
 
-			for ( ; i<size && data[ i ] != char( 0 ); ++i )
-				path += data[ i ];
+                    emit oscData( path, list, src_adr, src_port );
 
-			while ( data[ i ] != ',' ) ++i;
-			++i;
-			while ( data[ i ] != char( 0 ) )
-				args += data[ i++ ];
-
-			if ( ! args.isEmpty() ) {
-				QList<QVariant> list;
-
-				foreach( QChar type, args ) {
-					while ( i%4 != 0 ) ++i;
-					//qDebug() << i << "\ttrying to convert to" << type;
-
-					QByteArray tmp = data.right( data.size()-i );
-					QVariant value;
-					if ( type == 's' ) {
-						QString s = toString( tmp );
-						value = s;
-						i += s.size();
-					}
-					if ( type == 'i' ) {
-						value = toInt32( tmp );
-						i+=4;
-					}
-					if ( type == 'f' ) {
-						value = toFloat( tmp );
-						i+=4;
-					}
-					//qDebug() << " got" << value;
-
-					if ( args.size() > 1 )
-						list.append( value );
-					else
-						arguments = value;
-				}
-
-				if ( args.size() > 1 )
-					arguments = list;
-			}
-		}
-		qDebug() << "path seems to be" << path << "args are" << args << ":" << arguments;
-
-		QMap<QString,QString> replacements;
-		replacements[ "!" ] = "^";
-		replacements[ "{" ] = "(";
-		replacements[ "}" ] = ")";
-		replacements[ "," ] = "|";
-		replacements[ "*" ] = ".*";
-		replacements[ "?" ] = ".";
-
-		foreach( QString rep, replacements.keys() )
-			path.replace( rep, replacements[ rep ] );
-
-		qDebug() << " after transformation to OSC-RegExp path is" << path;
-
-		QRegExp exp( path );
-		foreach( PathObject* obj, paths ) {
-			if ( exp.exactMatch( obj->_path ) )
-				obj->signalData( arguments );
-		}
-	}
+                    decodeState=0;
+                    list.clear();
+                }
+                i++;
+            }
+    }
 }
 
